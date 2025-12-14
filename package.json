@@ -1,14 +1,15 @@
 {
   "name": "park-here-bot",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "dist/index.js",
   "repository": "https://github.com/DerLev/park-here-bot.git",
   "author": "DerLev <levin.schroeren@gmail.com>",
   "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "start": "node dist/index.js"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",

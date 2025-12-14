@@ -1,104 +1,126 @@
-import { CognitoIdentityClient, GetCredentialsForIdentityCommand, GetIdCommand } from '@aws-sdk/client-cognito-identity'
-import { SignatureV4 } from '@aws-sdk/signature-v4'
-import { CognitoUserPool, AuthenticationDetails, CognitoUser } from 'amazon-cognito-identity-js'
+import { 
+  CognitoUserPool, 
+  CognitoUser, 
+  AuthenticationDetails, 
+  CognitoUserSession 
+} from 'amazon-cognito-identity-js'
+import { 
+  CognitoIdentityClient, 
+  GetIdCommand, 
+  GetCredentialsForIdentityCommand 
+} from "@aws-sdk/client-cognito-identity"
+import { SignatureV4 } from "@aws-sdk/signature-v4"
 import { Sha256 } from "@aws-crypto/sha256-js"
-import { HttpRequest } from '@aws-sdk/protocol-http'
+import { HttpRequest } from "@aws-sdk/protocol-http"
 
-const poolData = {
-  UserPoolId: "eu-central-1_fiCD3BPci",
-  ClientId: "1rq16p3rmvo3muipsc4hgkg7id",
+import { appConfig } from './config.js'
+
+interface AwsCredentials {
+  accessKeyId: string
+  secretAccessKey: string
+  sessionToken: string
 }
 
-const userPool = new CognitoUserPool(poolData)
+class AuthService {
+  private credentials: AwsCredentials | null = null
 
-const userData = {
-  Username: "",
-  Pool: userPool,
-}
-const cognitoUser = new CognitoUser(userData)
+  /**
+   * Performs SRP Login -> Identity Exchange -> Stores Credentials
+   */
+  public async login(): Promise<void> {
+    console.log("Authenticating...")
+    
+    /* Setup Cognito User */
+    const poolData = { UserPoolId: appConfig.USER_POOL_ID, ClientId: appConfig.CLIENT_ID }
+    const userPool = new CognitoUserPool(poolData)
+    const cognitoUser = new CognitoUser({
+      Username: appConfig.USERNAME,
+      Pool: userPool,
+    })
+    const authDetails = new AuthenticationDetails({
+      Username: appConfig.USERNAME,
+      Password: appConfig.PASSWORD,
+    })
 
-const authenticationDetails = new AuthenticationDetails({
-  Username: userData.Username,
-  Password: ""
-})
+    /* SRP Login */
+    const idToken = await new Promise<string>((resolve, reject) => {
+      cognitoUser.authenticateUser(authDetails, {
+        onSuccess: (res: CognitoUserSession) => resolve(res.getIdToken().getJwtToken()),
+        onFailure: (err: Error) => reject(err),
+        newPasswordRequired: () => reject(new Error("New Password Required")),
+      })
+    })
 
-const identityPoolId = "eu-central-1:7377d086-0ed2-442b-ba92-3fdf365e5887"
-const region = "eu-central-1"
+    /* Exchange ID Token for Temporary AWS Credentials */
+    const cognitoIdentity = new CognitoIdentityClient({ region: appConfig.REGION })
+    const loginMapKey = `cognito-idp.${appConfig.REGION}.amazonaws.com/${appConfig.USER_POOL_ID}`
+    
+    /* Get Identity ID */
+    const idRes = await cognitoIdentity.send(new GetIdCommand({
+      IdentityPoolId: appConfig.IDENTITY_POOL_ID,
+      Logins: { [loginMapKey]: idToken },
+    }))
 
-cognitoUser.authenticateUser(authenticationDetails, {
-  onSuccess: async (res) => {
-    console.log("Auth successful")
-    const idToken = res.getIdToken().getJwtToken()
+    if (!idRes.IdentityId) throw new Error("Failed to get IdentityId")
 
-    const cognitoIdentity = new CognitoIdentityClient({ region })
+    /* Get Credentials */
+    const credRes = await cognitoIdentity.send(new GetCredentialsForIdentityCommand({
+      IdentityId: idRes.IdentityId,
+      Logins: { [loginMapKey]: idToken },
+    }))
 
-    const loginMapKey = `cognito-idp.${region}.amazonaws.com/${poolData.UserPoolId}`
-    const loginsMap = { [loginMapKey]: idToken }
-
-    const idParams = {
-      IdentityPoolId: identityPoolId,
-      Logins: loginsMap,
+    if (!credRes.Credentials || !credRes.Credentials.AccessKeyId || !credRes.Credentials.SecretKey || !credRes.Credentials.SessionToken) {
+      throw new Error("Failed to get Credentials")
     }
 
-    try {
-      const idResponse = await cognitoIdentity.send(new GetIdCommand(idParams))
-      const identityId = idResponse.IdentityId
-
-      const credParams = {
-        IdentityId: identityId,
-        Logins: loginsMap
-      }
-      const credResponse = await cognitoIdentity.send(new GetCredentialsForIdentityCommand(credParams))
-      
-      const tempCreds = {
-        accessKeyId: credResponse.Credentials?.AccessKeyId ?? "",
-        secretAccessKey: credResponse.Credentials?.SecretKey ?? "",
-        sessionToken: credResponse.Credentials?.SessionToken ?? "",
-      }
-
-      console.log(tempCreds)
-
-      const apiUrl = "https://user-management.api.park-here.eu/v1/me";
-      const url = new URL(apiUrl);
-
-      // Prepare the request object for signing
-      const request = new HttpRequest({
-        hostname: url.hostname,
-        path: url.pathname,
-        protocol: url.protocol,
-        method: "GET",
-        headers: {
-            host: url.hostname,
-            // "ph-client-datetime": Date.now().toString() // Replicating custom header
-        }
-      });
-
-      const signer = new SignatureV4({
-        credentials: {
-          accessKeyId: tempCreds.accessKeyId,
-          secretAccessKey: tempCreds.secretAccessKey,
-          sessionToken: tempCreds.sessionToken
-        },
-        region,
-        service: "execute-api", // Crucial: API Gateway service name
-        sha256: Sha256
-      });
-
-      const signedRequest = await signer.sign(request);
-
-      const response = await fetch(apiUrl, {
-        method: signedRequest.method,
-        headers: signedRequest.headers
-      });
-
-      const data = await response.json();
-      console.log("\n--- API RESPONSE ---");
-      console.log(data);
-    } catch (err) {
-      
+    /* Save Credentials */
+    this.credentials = {
+      accessKeyId: credRes.Credentials.AccessKeyId,
+      secretAccessKey: credRes.Credentials.SecretKey,
+      sessionToken: credRes.Credentials.SessionToken,
     }
-  },
-  onFailure: (err) => {
-    console.error("Auth failed:", err.message || JSON.stringify(err))
+
+    console.log("Authentication Complete.")
   }
-})
+
+  /**
+   * A wrapper around global fetch that automatically signs requests with SigV4
+   */
+  public async signedFetch(inputUrl: string, options: RequestInit = {}): Promise<Response> {
+    if (!this.credentials) throw new Error("Not logged in! Call login() first.")
+
+    const urlObj = new URL(inputUrl)
+    const signer = new SignatureV4({
+      credentials: this.credentials,
+      region: appConfig.REGION,
+      service: 'execute-api', 
+      sha256: Sha256,
+    })
+
+    /* Prepare Request */
+    const request = new HttpRequest({
+      hostname: urlObj.hostname,
+      path: urlObj.pathname + urlObj.search,
+      protocol: urlObj.protocol,
+      method: options.method || 'GET',
+      headers: {
+        host: urlObj.hostname,
+        'ph-client-datetime': Date.now().toString(),
+        ...(options.headers as Record<string, string>)
+      },
+      body: options.body ? (options.body as string) : undefined,
+    })
+
+    /* Sign Request */
+    const signedRequest = await signer.sign(request)
+
+    /* Execute Fetch */
+    return fetch(inputUrl, {
+      method: signedRequest.method,
+      headers: signedRequest.headers,
+      body: signedRequest.body,
+    })
+  }
+}
+
+export const authService = new AuthService()
