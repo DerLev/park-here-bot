@@ -16,9 +16,11 @@
     "@aws-sdk/client-cognito-identity": "^3.948.0",
     "@aws-sdk/protocol-http": "^3.374.0",
     "@aws-sdk/signature-v4": "^3.374.0",
-    "amazon-cognito-identity-js": "^6.3.16"
+    "amazon-cognito-identity-js": "^6.3.16",
+    "dotenv": "^17.2.3"
   },
   "devDependencies": {
+    "@types/node": "^25.0.2",
     "typescript": "^5.9.3"
   },
   "engines": {
