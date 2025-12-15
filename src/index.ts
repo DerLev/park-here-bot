@@ -1,4 +1,5 @@
 import { authService } from './auth.js'
+import type { UserManagementMe } from './responses.js'
 
 async function main() {
   try {
@@ -22,7 +23,7 @@ async function main() {
       return
     }
 
-    const data = await response.json()
+    const data = await response.json() as UserManagementMe
     console.dir(data, { depth: null, colors: true })
 
   } catch (error) {
