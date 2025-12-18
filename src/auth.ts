@@ -1,19 +1,19 @@
-import { 
-  CognitoUserPool, 
-  CognitoUser, 
-  AuthenticationDetails, 
-  CognitoUserSession 
-} from 'amazon-cognito-identity-js'
-import { 
-  CognitoIdentityClient, 
-  GetIdCommand, 
-  GetCredentialsForIdentityCommand 
+import {
+  CognitoUserPool,
+  CognitoUser,
+  AuthenticationDetails,
+  CognitoUserSession,
+} from "amazon-cognito-identity-js"
+import {
+  CognitoIdentityClient,
+  GetIdCommand,
+  GetCredentialsForIdentityCommand,
 } from "@aws-sdk/client-cognito-identity"
 import { SignatureV4 } from "@aws-sdk/signature-v4"
 import { Sha256 } from "@aws-crypto/sha256-js"
 import { HttpRequest } from "@aws-sdk/protocol-http"
 
-import { appConfig } from './config.js'
+import { appConfig } from "./config.js"
 
 interface AwsCredentials {
   accessKeyId: string
@@ -29,9 +29,12 @@ class AuthService {
    */
   public async login(): Promise<void> {
     console.log("Authenticating...")
-    
+
     /* Setup Cognito User */
-    const poolData = { UserPoolId: appConfig.USER_POOL_ID, ClientId: appConfig.CLIENT_ID }
+    const poolData = {
+      UserPoolId: appConfig.USER_POOL_ID,
+      ClientId: appConfig.CLIENT_ID,
+    }
     const userPool = new CognitoUserPool(poolData)
     const cognitoUser = new CognitoUser({
       Username: appConfig.USERNAME,
@@ -45,31 +48,43 @@ class AuthService {
     /* SRP Login */
     const idToken = await new Promise<string>((resolve, reject) => {
       cognitoUser.authenticateUser(authDetails, {
-        onSuccess: (res: CognitoUserSession) => resolve(res.getIdToken().getJwtToken()),
+        onSuccess: (res: CognitoUserSession) =>
+          resolve(res.getIdToken().getJwtToken()),
         onFailure: (err: Error) => reject(err),
         newPasswordRequired: () => reject(new Error("New Password Required")),
       })
     })
 
     /* Exchange ID Token for Temporary AWS Credentials */
-    const cognitoIdentity = new CognitoIdentityClient({ region: appConfig.REGION })
+    const cognitoIdentity = new CognitoIdentityClient({
+      region: appConfig.REGION,
+    })
     const loginMapKey = `cognito-idp.${appConfig.REGION}.amazonaws.com/${appConfig.USER_POOL_ID}`
-    
+
     /* Get Identity ID */
-    const idRes = await cognitoIdentity.send(new GetIdCommand({
-      IdentityPoolId: appConfig.IDENTITY_POOL_ID,
-      Logins: { [loginMapKey]: idToken },
-    }))
+    const idRes = await cognitoIdentity.send(
+      new GetIdCommand({
+        IdentityPoolId: appConfig.IDENTITY_POOL_ID,
+        Logins: { [loginMapKey]: idToken },
+      }),
+    )
 
     if (!idRes.IdentityId) throw new Error("Failed to get IdentityId")
 
     /* Get Credentials */
-    const credRes = await cognitoIdentity.send(new GetCredentialsForIdentityCommand({
-      IdentityId: idRes.IdentityId,
-      Logins: { [loginMapKey]: idToken },
-    }))
+    const credRes = await cognitoIdentity.send(
+      new GetCredentialsForIdentityCommand({
+        IdentityId: idRes.IdentityId,
+        Logins: { [loginMapKey]: idToken },
+      }),
+    )
 
-    if (!credRes.Credentials || !credRes.Credentials.AccessKeyId || !credRes.Credentials.SecretKey || !credRes.Credentials.SessionToken) {
+    if (
+      !credRes.Credentials ||
+      !credRes.Credentials.AccessKeyId ||
+      !credRes.Credentials.SecretKey ||
+      !credRes.Credentials.SessionToken
+    ) {
       throw new Error("Failed to get Credentials")
     }
 
@@ -86,14 +101,17 @@ class AuthService {
   /**
    * A wrapper around global fetch that automatically signs requests with SigV4
    */
-  public async signedFetch(inputUrl: string, options: RequestInit = {}): Promise<Response> {
+  public async signedFetch(
+    inputUrl: string,
+    options: RequestInit = {},
+  ): Promise<Response> {
     if (!this.credentials) throw new Error("Not logged in! Call login() first.")
 
     const urlObj = new URL(inputUrl)
     const signer = new SignatureV4({
       credentials: this.credentials,
       region: appConfig.REGION,
-      service: 'execute-api', 
+      service: "execute-api",
       sha256: Sha256,
     })
 
@@ -102,11 +120,11 @@ class AuthService {
       hostname: urlObj.hostname,
       path: urlObj.pathname + urlObj.search,
       protocol: urlObj.protocol,
-      method: options.method || 'GET',
+      method: options.method || "GET",
       headers: {
         host: urlObj.hostname,
-        'ph-client-datetime': Date.now().toString(),
-        ...(options.headers as Record<string, string>)
+        "ph-client-datetime": Date.now().toString(),
+        ...(options.headers as Record<string, string>),
       },
       body: options.body ? (options.body as string) : undefined,
     })

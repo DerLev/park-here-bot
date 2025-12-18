@@ -1,4 +1,39 @@
-export interface UserManagementMe {
+/* eslint-disable @typescript-eslint/no-explicit-any */
+export type Weekdays = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun"
+
+export type Languages = "de" | "en"
+
+interface Violation {
+  price: number
+  fixedPrice: {
+    price: number
+    active: boolean
+  }
+}
+
+interface ViolationWithFactoredPrice extends Violation {
+  reservationFactoredPrice: {
+    price: number
+    active: boolean
+  }
+}
+
+interface ViolationConfig {
+  sendEmail: boolean
+  emailTemplate: {
+    subject: string
+    body: string
+  }
+}
+
+interface BookingPriority {
+  day: Capitalize<Weekdays>
+  reservableDays: number
+  time: string
+  tz: string
+}
+
+export interface UserManagementMeResponse {
   id: string
   customId: string
   email: string
@@ -35,71 +70,24 @@ export interface UserManagementMe {
       locationId: number
       startTime: string
       endTime: string
-      name: {
-        en: string
-        de: string
-      }
+      name: Record<Languages, string>
       deleted: boolean
       price: number
     }[]
     paymentOptionRequired: boolean
-    bookingPriorities: {
-      day: string
-      reservableDays: number
-      time: string
-      tz: string
-    }[]
-    chargingBookingPriorities: {
-      day: string
-      reservableDays: number
-      time: string
-      tz: string
-    }[]
+    bookingPriorities: BookingPriority[]
+    chargingBookingPriorities: BookingPriority[]
     userAgreementRequired: boolean
     instantBooking: boolean
     evChargingFullDay: boolean
     numberOfUsers: number | null
     pricing: {
       reservationPricing: {
-        dailyPriceFactors: {
-          mon: number
-          tue: number
-          wed: number
-          thu: number
-          fri: number
-          sat: number
-          sun: number
-        }
+        dailyPriceFactors: Record<Weekdays, number>
         violationPricing: {
-          wrongParkerViolation: {
-            price: number
-            fixedPrice: {
-              price: number
-              active: boolean
-            }
-          }
-          unusedReservationViolation: {
-            price: number
-            fixedPrice: {
-              price: number
-              active: boolean
-            }
-            reservationFactoredPrice: {
-              price: number
-              active: boolean
-            }
-          }
-          lateDeletionViolation: {
-            price: number
-            fixedPrice: {
-              price: number
-              active: boolean
-            }
-            reservationFactoredPrice: {
-              price: number
-              active: boolean
-            }
-          }
+          wrongParkerViolation: Violation
+          unusedReservationViolation: ViolationWithFactoredPrice
+          lateDeletionViolation: ViolationWithFactoredPrice
         }
       }
     }
@@ -114,26 +102,9 @@ export interface UserManagementMe {
       sendEmailForUnusedReservation: boolean
     }
     violationConfig: {
-      wrongParkerConfig: {
-        sendEmail: boolean
-        emailTemplate: {
-          subject: string
-          body: string
-        }
-      }
-      unusedReservationConfig: {
-        sendEmail: boolean
-        emailTemplate: {
-          subject: string
-          body: string
-        }
-      }
+      wrongParkerConfig: ViolationConfig
+      unusedReservationConfig: ViolationConfig
       lateDeletionConfig: {
-        sendEmail: boolean
-        emailTemplate: {
-          subject: string
-          body: string
-        }
         cutOffPoint: {
           day: string
           time: {
@@ -141,18 +112,10 @@ export interface UserManagementMe {
             minute: number
           }
         }
-      }
+      } & ViolationConfig
     }
     autoBooking: {
-      dailyEnabled: {
-        mon: boolean
-        tue: boolean
-        wed: boolean
-        thu: boolean
-        fri: boolean
-        sat: boolean
-        sun: boolean
-      }
+      dailyEnabled: Record<Weekdays, boolean>
       managedBy: string
     }
   }
@@ -171,7 +134,7 @@ export interface UserManagementMe {
   subsidiaryId: number | null
   charging: boolean
   userAgreements: any[]
-  automatedBookingOffset: number | null,
+  automatedBookingOffset: number | null
   ssoEnabled: boolean
   managedBy: string
   userDevices: {
