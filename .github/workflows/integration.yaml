@@ -1,0 +1,43 @@
+name: CI
+on:
+  push:
+    branches:
+      - "main"
+    paths-ignore:
+      - '**.md'
+  pull_request:
+
+jobs:
+  lint-and-check:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    if: ${{ !startsWith(github.event.head_commit.message, 'wip:') }}
+    permissions:
+      checks: write
+      pull-requests: read
+      contents: read
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+      - name: Setup Nodejs environment
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: "yarn"
+      - name: Install Dependencies
+        run: yarn --frozen-lockfile
+      - name: Lint Action
+        run: yarn lint:nofix --output-file eslint_report.json --format json
+        continue-on-error: true
+      - name: Type Check Action
+        run: yarn tsc --noEmit > typescript.log
+        continue-on-error: true
+      - name: Annotate Code
+        uses: DerLev/eslint-annotations@v2
+        with:
+          eslint-report: eslint_report.json
+          typescript-log: typescript.log
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          error-on-warn: true
+          status-check-name: Annotations
+          fail-in-pr: false

@@ -10,7 +10,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "lint": "eslint . --ext .ts --fix"
+    "lint": "eslint . --ext .ts --fix",
+    "lint:nofix": "eslint . --ext .ts"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",
